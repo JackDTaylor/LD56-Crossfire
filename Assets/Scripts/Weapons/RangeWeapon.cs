@@ -1,13 +1,22 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 public class RangeWeapon : MonoBehaviour {
 	public float fireRate = 1f;
 	public float spread = 2.5f;
+	
 	public int damage;
 	
-	public float maxPassThroughLevel = 33f;
+	public float bulletSpeed;
+	public float bulletTrailLength;
+	public float range;
+	
+	
+	public Vector2 passThroughLevel = new Vector2(1f, 33f);
 	public float passThroughFalloff = 3f;
 
+	public float bloodIntensity = 1f;
+	
 	public bool applyAngleConstraints;
 	public Vector2 angleConstraints;
 
@@ -78,13 +87,17 @@ public class RangeWeapon : MonoBehaviour {
 		if(fireCooldown > 0) {
 			return;
 		}
+		
+		var bulletIndex = 0;
+		
+		var random = Random.Range(-spread, +spread);
 
 		foreach(var barrel in barrels) {
 			var euler = rotateTransform.rotation.eulerAngles;
 
-			euler.z += Random.Range(-spread, +spread);
+			euler.z += random;
 
-			ProjectileManager.Get().SpawnBullet(barrel.transform.position, euler, this, owner);
+			ProjectileManager.Get().SpawnBullet(barrel.transform.position, euler, this, owner, bulletIndex++, barrel);
 		}
 
 		fireCooldown = fireRate;

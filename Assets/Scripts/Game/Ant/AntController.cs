@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using Cysharp.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using Random = UnityEngine.Random;
@@ -15,7 +14,6 @@ public class AntController : MonoBehaviour {
 	const float BITE_COOLDOWN = 0.4f;
 	const float REVERSE_MODE_COOLDOWN = 5f;
 	const float DEATH_DECAY = 5f;
-	const float INVINCIBILITY_TIME = 3f;
 	const int STORED_RIGIDBODY_POSITIONS = 20 * 3; // 20 fixed updates per second, save for 5 seconds
 
 	public int level = 1;
@@ -31,7 +29,10 @@ public class AntController : MonoBehaviour {
 
 	public AntMouth mouth;
 
-	public bool isPlayerControlled;
+	public Player player;
+	
+	public bool isPlayerControlled => player != null;
+
 	public bool isDead;
 	public bool isEating;
 	public bool isInvincible = true;
@@ -64,6 +65,11 @@ public class AntController : MonoBehaviour {
 	public float reverseModeTimeLeft;
 	
 	public bool showAiDebugOverlay;
+	
+	public float hitAnimationSize = 0.2f;
+	public float hitAnimationTime = 0.15f;
+
+	public float timeBetweenBleeds = 3.5f;
 
 	// Protected
 	Animator animator;
@@ -78,14 +84,16 @@ public class AntController : MonoBehaviour {
 
 	float moveFrame;
 	
-	float hitAnimationScaleAddition = 0f;
-	float hitAnimationTime = 0.15f;
+	float hitAnimationState;
 
 	float eatCooldown;
 	float decayCooldown = DEATH_DECAY;
-	float invincibilityTime = INVINCIBILITY_TIME;
+	
+	float invincibilityTime;
 
 	float birthStatsMultiplier = 1f;
+	
+	float timeToNextBleed;
 
 	readonly Queue<float> lastMovements = new Queue<float>(STORED_RIGIDBODY_POSITIONS + 1);
 	Vector2 lastRigidbodyPosition;
@@ -99,6 +107,8 @@ public class AntController : MonoBehaviour {
 	AntController aiTargetAnt;
 
 	Collection<AntController> visibleAnts = new Collection<AntController>();
+	
+	Collection<Vector2>[] debugAIExplorePoints = new Collection<Vector2>[6];
 
 	void Start() {
 		body.localScale = Vector3.zero;
@@ -109,20 +119,17 @@ public class AntController : MonoBehaviour {
 		prevFramePosition = transform.position;
 		lastRigidbodyPosition = rigidbody2d.position;
 
-		isPlayerControlled = name == "Ant (Player)";
-
-		birthStatsMultiplier = Random.Range(0.85f, 1.05f);
+		// Do not mess with the player
+		birthStatsMultiplier = isPlayerControlled ? 1f : Random.Range(0.85f, 1.05f);
 	}
 
 	public void Init() {
+		invincibilityTime = GameManager.Get().spawnInvincibilityTime;
+
 		health = CalcMaxHealth();
 	}
 
 	void Update() {
-		if(isPlayerControlled) {
-			birthStatsMultiplier = 1f; // Do not mess with the player
-		}
-
 		isInvincible = invincibilityTime > 0;
 
 		if(isInvincible) {
@@ -161,40 +168,11 @@ public class AntController : MonoBehaviour {
 		UpdateGfx();
 	}
 
-	void UpdateGuns() {
-		knife.gameObject.SetActive(hasKnife);
-		sabre.gameObject.SetActive(hasSabre);
-		pistol.gameObject.SetActive(hasPistol);
-		turret1.gameObject.SetActive(hasTurret1);
-		turret2.gameObject.SetActive(hasTurret2);
-	}
-
 	void FixedUpdate() {
 		UpdatePosition();
 	}
 
-	void Die() {
-		isDead = true;
-		decayCooldown = Mathf.Max(10f, level);
-
-		rigidbody2d.constraints = RigidbodyConstraints2D.FreezeAll;
-		body.gameObject.GetComponent<Collider2D>().isTrigger = true;
-		healthBarContainer.gameObject.SetActive(false);
-
-		hasKnife = false;
-		hasSabre = false;
-		hasPistol = false;
-		hasTurret1 = false;
-		hasTurret2 = false;
-
-		isPlayerControlled = false;
-	}
-
-	public void DestroyBody() {
-		transform.SetParent(null); // Become batman
-		Destroy(gameObject);
-	}
-
+	#region # Calculation functions
 	float CalcMoveSpeed() {
 		// 60..30
 		var result = Mathf.Lerp(moveSpeed.x, moveSpeed.y, CalcNormalizedMultiplier());
@@ -232,13 +210,27 @@ public class AntController : MonoBehaviour {
 		return Mathf.RoundToInt(Mathf.Max(1f, Mathf.Sqrt(level)));
 	}
 
+
+	#endregion
+	
+	#region # Update methods
+
+	void UpdateGuns() {
+		knife.gameObject.SetActive(hasKnife);
+		sabre.gameObject.SetActive(hasSabre);
+		pistol.gameObject.SetActive(hasPistol);
+		turret1.gameObject.SetActive(hasTurret1);
+		turret2.gameObject.SetActive(hasTurret2);
+	}
+	
 	void UpdateCheats() {
 		if(Input.GetKeyDown(KeyCode.F1)) {
-			hasPistol = true;
+			hasPistol = !hasPistol;
 		}
 		
 		if(Input.GetKeyDown(KeyCode.F2)) {
-			hasTurret2 = true;
+			hasTurret1 = false;
+			hasTurret2 = !hasTurret2;
 		}
 		
 		if(Input.GetKeyDown(KeyCode.F4)) {
@@ -266,14 +258,16 @@ public class AntController : MonoBehaviour {
 		var targetScale = CalcScale();
 		var currentScale = body.localScale.x;
 		
-		hitAnimationScaleAddition -= Time.deltaTime / hitAnimationTime;
+		hitAnimationState -= Time.deltaTime / hitAnimationTime;
 		
-		if(hitAnimationScaleAddition < 0) {
-			hitAnimationScaleAddition = 0f;
+		if(hitAnimationState < 0) {
+			hitAnimationState = 0f;
 		}
+		
+		var additionalAnimScale = hitAnimationState * hitAnimationSize;
 
 		if(scaleImmediately) {
-			body.localScale = Vector3.one * targetScale;
+			body.localScale = Vector3.one * (targetScale + additionalAnimScale);
 			return;
 		}
 
@@ -283,7 +277,7 @@ public class AntController : MonoBehaviour {
 			currentScale = targetScale;
 		}
 
-		body.localScale = Vector3.one * (currentScale + hitAnimationScaleAddition);
+		body.localScale = Vector3.one * (currentScale + additionalAnimScale);
 	}
 
 	void UpdateGfx() {
@@ -308,6 +302,22 @@ public class AntController : MonoBehaviour {
 		foreach(var side in sides) {
 			side.isDead = isDead;
 			side.isEating = isEating;
+		}
+		
+		
+		if(health < CalcMaxHealth() * 0.15f) {
+			timeToNextBleed -= Time.deltaTime;
+			
+			if(timeToNextBleed < 0) {
+				timeToNextBleed = timeBetweenBleeds;
+
+				ProjectileManager.Get().SpawnBloodSplash(
+					position:  transform.position,
+					normalAngle: 0f,
+					intensity:   0.25f + CalcNormalizedMultiplier(),
+					scale:       CalcScale()
+				);
+			}
 		}
 	}
 
@@ -376,6 +386,125 @@ public class AntController : MonoBehaviour {
 
 		eatCooldown = BITE_COOLDOWN;
 	}
+	
+	void UpdateAI() {
+		var ants = new Collection<AntController>();
+		var guns = new Collection<GunSpawner>();
+
+		foreach(var gunSpawner in transform.parent.gameObject.GetComponentsInChildren<GunSpawner>()) {
+			if(gunSpawner.currentPickup != GunSpawner.Pickup.NONE && IsPointVisible(gunSpawner.transform.position)) {
+				guns.Add(gunSpawner);
+			}
+		}
+
+		foreach(var ant in transform.parent.gameObject.GetComponentsInChildren<AntController>()) {
+			if(ant == this) {
+				continue;
+			}
+
+			if(IsPointVisible(ant.transform.position)) {
+				ants.Add(ant);
+			}
+		}
+
+		var scale = Mathf.Max(1f, CalcScale());
+
+		var explorePoints = new Collection<Vector2>[6];
+		explorePoints[0] = GenerateExplorePoints(45f, 15f * scale);
+		explorePoints[1] = GenerateExplorePoints(45f, 5f * scale);
+		explorePoints[2] = GenerateExplorePoints(90f, 15f * scale);
+		explorePoints[3] = GenerateExplorePoints(90f, 5f * scale);
+		explorePoints[4] = GenerateExplorePoints(180f, 15f * scale);
+		explorePoints[5] = GenerateExplorePoints(180f, 5f * scale);
+
+		visibleAnts = ants;
+
+		debugAIExplorePoints = explorePoints;
+
+		var aiRequest = new AIStrategyRequest {
+			me = this,
+
+			position = transform.position,
+			direction = transform.up,
+
+			explorePoints = explorePoints,
+			visibleGuns = guns,
+			visibleAnts = ants,
+		};
+
+		var response = aiStrategy.Evaluate(aiRequest);
+
+		if(response == null) {
+			return;
+		}
+
+		aiCurrentAction = response.action;
+		aiTarget = response.target;
+		aiTargetAnt = response.targetAnt;
+	}
+
+	void UpdateAIControls() {
+		timeToAIUpdate -= Time.deltaTime;
+
+		if(timeToAIUpdate < 0 || ShouldForceRecalculateAI()) {
+			timeToAIUpdate = AI_UPDATE_INTERVAL + Random.Range(-0.1f, 0.1f); // Some randomness to spread the load
+
+			UpdateAI();
+		}
+
+		if(aiCurrentAction == AIStrategyResult.Action.EAT) {
+			// Correct position
+			aiTarget = aiTargetAnt.transform.position;
+		}
+
+		var targetOffset = aiTarget - (Vector2)transform.position;
+		var targetRotation = -Vector2.SignedAngle(transform.up, targetOffset.normalized);
+
+		float rotateInput = targetOffset.magnitude < 1f ? 0 : Mathf.Clamp(targetRotation / 15f, -1f, 1f);
+		float moveInput = Mathf.Clamp01(targetOffset.magnitude / (aiCurrentAction == AIStrategyResult.Action.EAT ? EAT_SLOW_DOWN : 1f));
+
+		if(isReverseMode) {
+			moveInput = -Mathf.Clamp01(targetOffset.magnitude);
+			rotateInput = -rotateInput;
+		}
+
+		if(DebugUtilsManager.Get().aiWalkMode == DebugUtilsManager.AiWalkMode.STAND) {
+			rotateInput = 0;
+			moveInput = 0;
+		} else if(DebugUtilsManager.Get().aiWalkMode == DebugUtilsManager.AiWalkMode.CIRCLES) {
+			rotateInput = 1f;
+			moveInput = 1f;
+		}
+		
+		desiredMove = moveInput * CalcMoveSpeed();
+		desiredRotation = rotateInput * CalcRotateSpeed();
+	}
+
+	void UpdatePlayerControls() {
+		float moveInput = Input.GetAxis("Vertical");
+		float rotateInput = Input.GetAxis("Horizontal");
+
+		if(moveInput < 0) {
+			moveInput /= 2;
+		}
+
+		desiredMove = moveInput * CalcMoveSpeed();
+		desiredRotation = rotateInput * CalcRotateSpeed() * Mathf.Sign(desiredMove);
+
+		UpdateCheats();
+	}
+	#endregion
+
+	#region # Visuals
+
+	
+	public void PlayHitAnimation() {
+		hitAnimationState = 1f;		
+	}
+
+	#endregion
+
+	#region # Business actions
 
 	void Bite(AntController victim) {
 		// Debug.Log($"[BITE] {name} -> {victim.name}");
@@ -404,6 +533,13 @@ public class AntController : MonoBehaviour {
 
 		// Attack
 		victim.ReceiveDamage(level, this, mouth.transform.position);
+		
+		ProjectileManager.Get().SpawnBloodSlash(
+			position:  mouth.transform.position,
+			normalAngle: mouth.transform.rotation.eulerAngles.z - 180,
+			intensity:   0.25f + CalcNormalizedMultiplier() / 2f,
+			scale:       CalcScale()
+		);
 	}
 
 	public void ReceiveDamage(int amount, AntController attacker, Vector2 hitPoint) {
@@ -414,7 +550,7 @@ public class AntController : MonoBehaviour {
 		health -= amount;
 
 		if(attacker.isPlayerControlled) {
-			GetComponentInParent<PlayerStatsManager>().SpawnXpOrb(hitPoint, Mathf.CeilToInt(level / 10f));
+			PlayerStatsManager.Get().SpawnXpOrb(hitPoint, Mathf.CeilToInt(level / 10f));
 		}
 
 		if(health <= 0) {
@@ -422,11 +558,35 @@ public class AntController : MonoBehaviour {
 		}
 	}
 	
-	public void PlayHitAnimation() {
-		hitAnimationScaleAddition = 0.1f;		
+	void Die() {
+		ProjectileManager.Get().SpawnBloodSplash(
+			position:  transform.position,
+			normalAngle: 0f,
+			intensity:   0.5f + CalcNormalizedMultiplier(),
+			scale:       CalcScale()
+		);
+
+		isDead = true;
+		decayCooldown = Mathf.Max(10f, level);
+
+		rigidbody2d.constraints = RigidbodyConstraints2D.FreezeAll;
+		body.gameObject.GetComponent<Collider2D>().isTrigger = true;
+		healthBarContainer.gameObject.SetActive(false);
+
+		hasKnife = false;
+		hasSabre = false;
+		hasPistol = false;
+		hasTurret1 = false;
+		hasTurret2 = false;
 	}
 
-	Collection<Vector2>[] debugAIExplorePoints = new Collection<Vector2>[6];
+	public void DestroyBody() {
+		transform.SetParent(null); // Become batman
+		Destroy(gameObject);
+	}
+
+	#endregion
+	
 
 	void OnDrawGizmosSelected() {
 		if(!showAiDebugOverlay) {
@@ -531,61 +691,6 @@ public class AntController : MonoBehaviour {
 		return result;
 	}
 
-	void UpdateAI() {
-		var ants = new Collection<AntController>();
-		var guns = new Collection<GunSpawner>();
-
-		foreach(var gunSpawner in transform.parent.gameObject.GetComponentsInChildren<GunSpawner>()) {
-			if(gunSpawner.currentPickup != GunSpawner.Pickup.NONE && IsPointVisible(gunSpawner.transform.position)) {
-				guns.Add(gunSpawner);
-			}
-		}
-
-		foreach(var ant in transform.parent.gameObject.GetComponentsInChildren<AntController>()) {
-			if(ant == this) {
-				continue;
-			}
-
-			if(IsPointVisible(ant.transform.position)) {
-				ants.Add(ant);
-			}
-		}
-
-		var scale = Mathf.Max(1f, CalcScale());
-
-		var explorePoints = new Collection<Vector2>[6];
-		explorePoints[0] = GenerateExplorePoints(45f, 15f * scale);
-		explorePoints[1] = GenerateExplorePoints(45f, 5f * scale);
-		explorePoints[2] = GenerateExplorePoints(90f, 15f * scale);
-		explorePoints[3] = GenerateExplorePoints(90f, 5f * scale);
-		explorePoints[4] = GenerateExplorePoints(180f, 15f * scale);
-		explorePoints[5] = GenerateExplorePoints(180f, 5f * scale);
-
-		visibleAnts = ants;
-
-		debugAIExplorePoints = explorePoints;
-
-		var aiRequest = new AIStrategyRequest {
-			me = this,
-
-			position = transform.position,
-			direction = transform.up,
-
-			explorePoints = explorePoints,
-			visibleGuns = guns,
-			visibleAnts = ants,
-		};
-
-		var response = aiStrategy.Evaluate(aiRequest);
-
-		if(response == null) {
-			return;
-		}
-
-		aiCurrentAction = response.action;
-		aiTarget = response.target;
-		aiTargetAnt = response.targetAnt;
-	}
 
 	bool ShouldForceRecalculateAI() {
 		var targetOffset = aiTarget - (Vector2)transform.position;
@@ -608,55 +713,6 @@ public class AntController : MonoBehaviour {
 		return false;
 	}
 
-	void UpdateAIControls() {
-		timeToAIUpdate -= Time.deltaTime;
-
-		if(timeToAIUpdate < 0 || ShouldForceRecalculateAI()) {
-			timeToAIUpdate = AI_UPDATE_INTERVAL + Random.Range(-0.1f, 0.1f); // Some randomness to spread the load
-
-			UpdateAI();
-		}
-
-		if(aiCurrentAction == AIStrategyResult.Action.EAT) {
-			// Correct position
-			aiTarget = aiTargetAnt.transform.position;
-		}
-
-		var targetOffset = aiTarget - (Vector2)transform.position;
-		var targetRotation = -Vector2.SignedAngle(transform.up, targetOffset.normalized);
-
-		float rotateInput = targetOffset.magnitude < 1f ? 0 : Mathf.Clamp(targetRotation / 15f, -1f, 1f);
-		float moveInput = Mathf.Clamp01(targetOffset.magnitude / (aiCurrentAction == AIStrategyResult.Action.EAT ? EAT_SLOW_DOWN : 1f));
-
-		if(isReverseMode) {
-			moveInput = -Mathf.Clamp01(targetOffset.magnitude);
-			rotateInput = -rotateInput;
-		}
-
-		rotateInput = 0;
-		moveInput = 0;
-		
-		level = 500;
-		health = CalcMaxHealth();
-
-		desiredMove = moveInput * CalcMoveSpeed();
-		desiredRotation = rotateInput * CalcRotateSpeed();
-	}
-
-	void UpdatePlayerControls() {
-		float moveInput = Input.GetAxis("Vertical");
-		float rotateInput = Input.GetAxis("Horizontal");
-
-		if(moveInput < 0) {
-			moveInput /= 2;
-		}
-
-		desiredMove = moveInput * CalcMoveSpeed();
-		desiredRotation = rotateInput * CalcRotateSpeed() * Mathf.Sign(desiredMove);
-
-		UpdateCheats();
-	}
-
 	List<AntController> GetEatingAnts() {
 		var colliders = new List<Collider2D>();
 
@@ -665,7 +721,11 @@ public class AntController : MonoBehaviour {
 		return colliders.Select(col => col.GetComponentInParent<AntController>()).Where(ant => ant).ToList();
 	}
 
-	public void PickupWeapon(GunSpawner.Pickup weapon) {
+	public bool PickupWeapon(GunSpawner.Pickup weapon) {
+		if(isDead) {
+			return false;
+		}
+
 		if(hasTurret1 && weapon == GunSpawner.Pickup.TURRET2) {
 			hasTurret1 = false;
 		}
@@ -682,5 +742,7 @@ public class AntController : MonoBehaviour {
 			case GunSpawner.Pickup.TURRET1: hasTurret1 = true; break;
 			case GunSpawner.Pickup.TURRET2: hasTurret2 = true; break;
 		}
+		
+		return true;
 	}
 }

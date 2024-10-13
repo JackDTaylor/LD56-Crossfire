@@ -7,9 +7,11 @@ using UnityEngine.Serialization;
 using Random = UnityEngine.Random;
 
 public class GameManager : MonoBehaviour {
-	public static GameManager Get() => Manager.Get<GameManager>();
-	void Awake() => Manager.Register(this);
+	public static GameManager Get() => ManagerProvider.Get<GameManager>();
+	void Awake() => ManagerProvider.Register(this);
 
+	public float spawnInvincibilityTime = 3f;
+	
 	public int targetBotCount = 64;
 	public float spawnInterval = 3f;
 
@@ -19,6 +21,8 @@ public class GameManager : MonoBehaviour {
 
 	public MenuUIController menuUIController;
 	[FormerlySerializedAs("gameUiController")] public GameUIController gameUIController;
+	
+	public Transform playersContainer;
 
 	private bool isPlayingInternal;
 
@@ -27,7 +31,10 @@ public class GameManager : MonoBehaviour {
 		set {
 			isPlayingInternal = value;
 
-			level.gameObject.SetActive(value);
+			if(level) {
+				level.gameObject.SetActive(value);
+			}
+			
 			gameUIController.gameObject.SetActive(value);
 			menuUIController.gameObject.SetActive(!value);
 		}
@@ -38,7 +45,7 @@ public class GameManager : MonoBehaviour {
 	bool isPlayerDead;
 
 	public void Start() {
-
+		isPlaying = false;
 	}
 
 	#region # Game management functions
@@ -60,18 +67,29 @@ public class GameManager : MonoBehaviour {
 	public void StartGame(int levelIndex) {
 		LoadLevel(levelIndex);
 
+		InitGame();
+	}
+	
+	public void InitGame() {
 		isPlaying = true;
-
-		timeToNextSpawn = spawnInterval;
-
-		RespawnPlayer();
 		
-		var spawners = GetShuffledSpawnersStack();
-		var botsSpawned = 0;
-		
-		while(botsSpawned++ < targetBotCount && spawners.Count > 0) {
-			spawners.Pop().Spawn();
+		PlayerManager.Get().AddPlayer(Player.Type.HUMAN, menuUIController.playerNameInput.text);
+
+		for(int i = 0; i < targetBotCount; i++) {
+			PlayerManager.Get().AddPlayer(Player.Type.AI, $"Soulless Machine #{i}");
 		}
+		
+		// TODO: Rework with players system
+		// timeToNextSpawn = spawnInterval;
+		//
+		// RespawnPlayer();
+		//
+		// var spawners = GetShuffledSpawnersStack();
+		// var botsSpawned = 0;
+		//
+		// while(botsSpawned++ < targetBotCount && spawners.Count > 0) {
+		// 	spawners.Pop().Spawn();
+		// }
 	}
 
 	public void ResumeGame() {
@@ -92,6 +110,8 @@ public class GameManager : MonoBehaviour {
 	public void EndGame() {
 		isPlaying = false;
 		UnloadLevel();
+		
+		PlayerManager.Get().RemoveAllPlayers();
 
 		menuUIController.ShowScreen(MenuUIController.ScreenType.MENU);
 	}
@@ -101,7 +121,7 @@ public class GameManager : MonoBehaviour {
 	}
 
 	#endregion
-
+	
 	#region # Misc
 
 	void TakePauseScreenshot() {
@@ -130,18 +150,18 @@ public class GameManager : MonoBehaviour {
 
 	#region # Player functions
 
-	public AntController GetPlayer() {
+	public AntController GetPlayerAnt() {
 		return GetAllAnts().FirstOrDefault(ant => ant.isPlayerControlled);
 	}
 
-	public void RespawnPlayer() {
-		var player = GetPlayer();
+	public void RespawnPlayer(Player player) {
+		var playerAnt = GetPlayerAnt();
 
-		if(player != null) {
-			player.isPlayerControlled = false;
+		if(playerAnt != null) {
+			playerAnt.player = null;
 		}
 
-		GetShuffledSpawnersStack().Pop().Spawn(true, GetComponent<PlayerStatsManager>().currentLevel);
+		GetShuffledSpawnersStack().Pop().Spawn(player, PlayerStatsManager.Get().currentLevel);
 	}
 
 	#endregion
@@ -166,32 +186,34 @@ public class GameManager : MonoBehaviour {
 			return;
 		}
 
-		var player = GetPlayer();
+		var player = GetPlayerAnt();
 
 		isPlayerDead = player == null || player.isDead;
 
 		gameUIController.deadOverlay.gameObject.SetActive(isPlayerDead);
 
-		if(isPlayerDead && Input.GetKeyDown(KeyCode.Space)) {
-			RespawnPlayer();
-			timeToNextSpawn = spawnInterval;
-		}
-
-		timeToNextSpawn -= Time.deltaTime;
-
-		var botsAlive = GetAllAnts().Count(ant => !ant.isDead && !ant.isPlayerControlled);
-
-		if(timeToNextSpawn < 0 && botsAlive < targetBotCount) {
-			var spawnersStack = GetShuffledSpawnersStack();
-			
-			var botsToSpawn = (int)Mathf.Clamp(targetBotCount - botsAlive, 0, spawnersStack.Count);
-			var botsSpawned = 0;
-			
-			while(spawnersStack.Count > 0 && botsSpawned++ < botsToSpawn) {
-				spawnersStack.Pop().Spawn();
-			}
-
-			timeToNextSpawn = spawnInterval;
-		}
+		
+		// TODO: Rework with players system
+		// if(isPlayerDead && Input.GetKeyDown(KeyCode.Space)) {
+		// 	RespawnPlayer();
+		// 	timeToNextSpawn = spawnInterval;
+		// }
+		//
+		// timeToNextSpawn -= Time.deltaTime;
+		//
+		// var botsAlive = GetAllAnts().Count(ant => !ant.isDead && !ant.isPlayerControlled);
+		//
+		// if(timeToNextSpawn < 0 && botsAlive < targetBotCount) {
+		// 	var spawnersStack = GetShuffledSpawnersStack();
+		// 	
+		// 	var botsToSpawn = (int)Mathf.Clamp(targetBotCount - botsAlive, 0, spawnersStack.Count);
+		// 	var botsSpawned = 0;
+		// 	
+		// 	while(spawnersStack.Count > 0 && botsSpawned++ < botsToSpawn) {
+		// 		spawnersStack.Pop().Spawn();
+		// 	}
+		//
+		// 	timeToNextSpawn = spawnInterval;
+		// }
 	}
 }

@@ -42,6 +42,6 @@ public class PlayerCamera : MonoBehaviour {
 	}
 
 	Transform FindSuitableTarget() {
-		return GameManager.Get().GetPlayer()?.transform;
+		return GameManager.Get().GetPlayerAnt()?.transform;
 	}
 }

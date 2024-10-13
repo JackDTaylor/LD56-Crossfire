@@ -1096,6 +1096,12 @@ MonoBehaviour:
   fireRate: 0.5
   spread: 2.5
   damage: 15
+  bulletSpeed: 64
+  bulletTrailLength: 1
+  range: 128
+  passThroughLevel: {x: 1, y: 33}
+  passThroughFalloff: 3
+  bloodIntensity: 0.5
   applyAngleConstraints: 1
   angleConstraints: {x: -60, y: 60}
   rotateTransform: {fileID: 7216863116571500834}
@@ -1214,6 +1220,9 @@ MonoBehaviour:
   isReverseMode: 0
   reverseModeCooldown: 0
   reverseModeTimeLeft: 0
+  showAiDebugOverlay: 0
+  hitAnimationSize: 0.2
+  hitAnimationTime: 0.15
   aiStrategy: {fileID: 11400000, guid: f93fad0575ccc434e88e654052005ecc, type: 2}
 --- !u!95 &2471939926884745280
 Animator:
@@ -1518,6 +1527,12 @@ MonoBehaviour:
   fireRate: 0.15
   spread: 2.5
   damage: 20
+  bulletSpeed: 128
+  bulletTrailLength: 4
+  range: 256
+  passThroughLevel: {x: 1, y: 33}
+  passThroughFalloff: 3
+  bloodIntensity: 1
   applyAngleConstraints: 0
   angleConstraints: {x: 0, y: 0}
   rotateTransform: {fileID: 5581814392790495894}
@@ -2260,9 +2275,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0693b3b0765275c488d5b86e1edc59fa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  fireRate: 0.33
-  spread: 2.5
+  fireRate: 0.21
+  spread: 5
   damage: 18
+  bulletSpeed: 96
+  bulletTrailLength: 6
+  range: 256
+  passThroughLevel: {x: 1, y: 33}
+  passThroughFalloff: 3
+  bloodIntensity: 0.75
   applyAngleConstraints: 0
   angleConstraints: {x: 0, y: 0}
   rotateTransform: {fileID: 6181095293847720564}

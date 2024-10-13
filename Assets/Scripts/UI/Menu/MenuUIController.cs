@@ -11,10 +11,10 @@ public class MenuUIController : MonoBehaviour {
 	public RectTransform newGameScreen;
 	public RectTransform pauseScreen;
 
-	public Toggle multiplayerToggle;
+	// public Toggle multiplayerToggle;
 
-	public RectTransform singleplayerConfigPanel;
-	public RectTransform multiplayerConfigPanel;
+	// public RectTransform singleplayerConfigPanel;
+	// public RectTransform multiplayerConfigPanel;
 
 	public TMP_InputField playerNameInput;
 
@@ -54,7 +54,7 @@ public class MenuUIController : MonoBehaviour {
 	}
 
 	void Update() {
-		multiplayerConfigPanel.gameObject.SetActive(multiplayerToggle.isOn);
-		singleplayerConfigPanel.gameObject.SetActive(!multiplayerToggle.isOn);
+		// multiplayerConfigPanel.gameObject.SetActive(multiplayerToggle.isOn);
+		// singleplayerConfigPanel.gameObject.SetActive(!multiplayerToggle.isOn);
 	}
 }

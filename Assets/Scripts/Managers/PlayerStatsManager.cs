@@ -2,8 +2,8 @@ using TMPro;
 using UnityEngine;
 
 public class PlayerStatsManager : MonoBehaviour {
-	public static PlayerStatsManager Get() => Manager.Get<PlayerStatsManager>();
-	void Awake() => Manager.Register(this);
+	public static PlayerStatsManager Get() => ManagerProvider.Get<PlayerStatsManager>();
+	void Awake() => ManagerProvider.Register(this);
 
 	public int currentXp = 0;
 	public int currentLevel = 1;
@@ -20,7 +20,7 @@ public class PlayerStatsManager : MonoBehaviour {
 	}
 
 	AntController GetPlayer() {
-		return GetComponent<GameManager>().GetPlayer();
+		return GetComponent<GameManager>().GetPlayerAnt();
 	}
 
 	int GetLevelXp(int level) {
